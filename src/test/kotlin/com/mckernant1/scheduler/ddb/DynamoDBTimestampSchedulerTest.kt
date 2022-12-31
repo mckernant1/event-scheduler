@@ -26,11 +26,11 @@ internal class DynamoDBTimestampSchedulerTest {
     @Test
     fun testFullRun(): Unit = runBlocking {
         val sampleData = TestEventData()
-        val now = Instant.now()
-        val instants = mutableListOf<Instant>()
-        val events = mutableSetOf<TestEventData>()
+        val now: Instant = Instant.now()
+        val instants: MutableList<Instant> = mutableListOf()
+        val events: MutableSet<TestEventData> = mutableSetOf()
 
-        val ts = DynamoDBTimestampScheduler<TestEventData>(
+        val ts: DynamoDBTimestampScheduler<TestEventData> = DynamoDBTimestampScheduler(
             ddb,
             TestEventData::class.java,
             delay = Duration.ofSeconds(1)
@@ -51,6 +51,50 @@ internal class DynamoDBTimestampSchedulerTest {
             }
         }
         assertEquals(1, events.size)
+        assertTrue(instants.all { it.isBeforeNow() })
+    }
+
+    @Test
+    fun testMultiple() {
+        val now: Instant = Instant.now()
+        val instants: MutableList<Instant> = mutableListOf()
+        val events: MutableSet<TestEventData> = mutableSetOf()
+
+        val ts: DynamoDBTimestampScheduler<TestEventData> = DynamoDBTimestampScheduler(
+            ddb,
+            TestEventData::class.java,
+            delay = Duration.ofSeconds(1)
+        ) { instant, event ->
+            instants.add(instant)
+            events.add(event)
+        }
+
+        val ts1: DynamoDBTimestampScheduler<TestEventData> = DynamoDBTimestampScheduler(
+            ddb,
+            TestEventData::class.java,
+            delay = Duration.ofSeconds(1)
+        ) { instant, event ->
+            instants.add(instant)
+            events.add(event)
+        }
+
+        for (i in 0..30) {
+            ts1.put(now + Duration.ofSeconds(i.toLong()), TestEventData())
+        }
+
+        for (i in 0..30) {
+            ts.put(now + Duration.ofSeconds(i.toLong()), TestEventData())
+        }
+
+        ts.start()
+
+        assertTimeout(Duration.ofSeconds(45)) {
+            while (!ts.isEmpty()) {
+                Thread.sleep(Duration.ofSeconds(5).toMillis())
+            }
+        }
+        assertEquals(62, events.size)
+        assertEquals(62, instants.size)
         assertTrue(instants.all { it.isBeforeNow() })
     }
 

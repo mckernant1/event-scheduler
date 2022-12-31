@@ -28,7 +28,16 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 /**
+ * Timestamp scheduler implemented with the dynamoDB lock client. Can be used with multiple instances across nodes
  *
+ * @param ddb DynamoDBClient
+ * @param clazz Type of event you want to store
+ * @param executorService service to start the thread to purge items
+ * @param delay delay between runs
+ * @param mapper for converting the values to the class
+ * @param tableName name of the tracking table
+ * @param leaseDurationSeconds how long the lock client to hold onto the lock. i.e. how long your action will take plus some extra time
+ * @param action The action you want to perform
  */
 class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructor(
     private val ddb: DynamoDbClient,
@@ -36,6 +45,7 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
     private val executorService: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(),
     private val delay: Duration = Duration.ofSeconds(30),
     private val mapper: ObjectMapper = ObjectMapper(),
+    private val tableName: String = "TimestampTable",
     leaseDurationSeconds: Long = 60,
     private val action: (Instant, T) -> Unit
 ) : TimestampScheduler<T> {
@@ -43,7 +53,7 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
     private var scheduledFuture: ScheduledFuture<*>? = null
 
     private val lockClient = AmazonDynamoDBLockClient(
-        AmazonDynamoDBLockClientOptions.builder(ddb, TIMESTAMP_TABLE_NAME)
+        AmazonDynamoDBLockClientOptions.builder(ddb, tableName)
             .withTimeUnit(TimeUnit.SECONDS)
             .withLeaseDuration(leaseDurationSeconds)
             .withHeartbeatPeriod(5)
@@ -56,7 +66,7 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
     init {
         try {
             ddb.createTable {
-                it.tableName(TIMESTAMP_TABLE_NAME)
+                it.tableName(tableName)
                 it.billingMode(BillingMode.PAY_PER_REQUEST)
                 it.attributeDefinitions(
                     AttributeDefinition.builder()
@@ -80,7 +90,7 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
                 )
             }
             ddb.waiter().waitUntilTableExists {
-                it.tableName(TIMESTAMP_TABLE_NAME)
+                it.tableName(tableName)
             }
         } catch (e: ResourceInUseException) {
             log.info("Timestamp table already exists")
@@ -88,7 +98,6 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
     }
 
     companion object {
-        private const val TIMESTAMP_TABLE_NAME = "TimestampTable"
         private const val TIMESTAMP_ATTRIBUTE_NAME = "timestamp"
         private const val EVENT_ATTRIBUTE_NAME = "eventData"
 
@@ -106,7 +115,7 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
     }
 
     override fun isEmpty(): Boolean = ddb.scan {
-        it.tableName(TIMESTAMP_TABLE_NAME)
+        it.tableName(tableName)
     }.count() == 0
 
 
@@ -116,9 +125,8 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
         }
 
         scheduledFuture = executorService.scheduleWithFixedDelay(delay) {
-
-            ddb.scanPaginator {
-                it.tableName(TIMESTAMP_TABLE_NAME)
+            ddb.scan {
+                it.tableName(tableName)
                 it.scanFilter(
                     mapOf(
                         TIMESTAMP_ATTRIBUTE_NAME to Condition.builder()
