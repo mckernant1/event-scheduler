@@ -4,6 +4,8 @@ This is a library for time based event scheduling.
 
 ### Use will gradle
 
+![](https://badgen.net/maven/v/metadata-url/https/mvn.mckernant1.com/release/com/mckernant1/event-scheduler/maven-metadata.xml)
+
 ```
 repositories {
     maven(uri("https://mvn.mckernant1.com/release"))
