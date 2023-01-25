@@ -8,6 +8,8 @@ This is a library for time based event scheduling.
 
 ```
 repositories {
+    // Needed for lock client
+    maven(uri("https://jitpack.io"))
     maven(uri("https://mvn.mckernant1.com/release"))
 }
 ```
