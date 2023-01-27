@@ -37,6 +37,7 @@ import java.util.concurrent.TimeUnit
  * @param mapper for converting the values to the class
  * @param tableName name of the tracking table
  * @param leaseDurationSeconds how long the lock client to hold onto the lock. i.e. how long your action will take plus some extra time
+ * @param maxItems the max number of items for this instance to work on
  * @param action The action you want to perform
  */
 class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructor(
@@ -47,6 +48,7 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
     private val mapper: ObjectMapper = ObjectMapper(),
     private val tableName: String = "TimestampTable",
     leaseDurationSeconds: Long = 60,
+    private val maxItems: Int = 10,
     private val action: (Instant, T) -> Unit
 ) : TimestampScheduler<T> {
 
@@ -151,6 +153,7 @@ class DynamoDBTimestampScheduler<T> @Throws(DynamoDbException::class) constructo
                 }
                 .filter { it.lockItem.isPresent }
                 .filter { it.instant.isBeforeNow() }
+                .take(maxItems)
                 .forEach { event ->
                     try {
                         action(event.instant, event.eventData)
